@@ -50,7 +50,7 @@
 - (void)initManagedObjectContext {    
     NSPersistentStoreCoordinator *coordinator = [self persistentStoreCoordinator];
     if (coordinator != nil) {
-        _managedObjectContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+        _managedObjectContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSMainQueueConcurrencyType];
         [_managedObjectContext setPersistentStoreCoordinator:coordinator];
     }
 }
@@ -107,10 +107,19 @@
 }
 
 -(void)withContextForThread:(void (^)(NSManagedObjectContext *) )operationsOnContext{
-    NSManagedObjectContext *contextForThread = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSMainQueueConcurrencyType];
-    contextForThread.parentContext = self.managedObjectContext;
-    [contextForThread performBlock:^{
+    NSManagedObjectContext *contextForThread = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    [contextForThread setParentContext:_managedObjectContext];
+    [contextForThread performBlockAndWait:^{
         operationsOnContext(contextForThread);
+        [contextForThread.parentContext performBlockAndWait:^{
+            NSError *error = nil;
+            [contextForThread.parentContext save:&error];
+            
+            if(error){
+                NSLog(@"Unresolved error %@, %@", error, [error userInfo]);
+                abort();
+            }
+        }];
     }];
 }
 
